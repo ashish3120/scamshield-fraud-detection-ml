@@ -1,5 +1,7 @@
 # ScamShield 🛡️
 
+[![CI Pipeline](https://github.com/ashish3120/scamshield-fraud-detection-ml/actions/workflows/ci.yml/badge.svg)](https://github.com/ashish3120/scamshield-fraud-detection-ml/actions/workflows/ci.yml)
+
 **Real-time Fraud Detection System using Machine Learning**
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
@@ -22,6 +24,7 @@
 - [API Documentation](#api-documentation)
 - [Project Structure](#project-structure)
 - [Results](#results)
+- [Statistical Report](statistical_report.md)
 - [Future Improvements](#future-improvements)
 - [Contributing](#contributing)
 - [License](#license)
@@ -88,45 +91,28 @@ The model is trained on the publicly available **European Card Transaction Datas
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐
-│  Raw Data   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────┐
-│  Preprocessing      │
-│  • Scaling          │
-│  • SMOTE Sampling   │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│  Model Training     │
-│  • Logistic Reg.    │
-│  • Random Forest    │
-│  • XGBoost          │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│  Model Selection    │
-│  (Random Forest)    │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│  Deployment         │
-│  • FastAPI          │
-│  • Streamlit        │
-└─────────────────────┘
+  ┌───────────┐      ┌─────────────┐      ┌────────────┐      ┌──────────────┐
+  │           │      │             │      │            │      │              │
+  │ Transaction ────►│ FastAPI API ├─────►│ PostgreSQL ├─────►│    Apache    │
+  │   Data    │      │ (api/main)  │      │  Database  │      │   Superset   │
+  │           │      │             │      │            │      │  Dashboard   │
+  └───────────┘      └──────┬──────┘      └─────┬──────┘      └──────────────┘
+                            │                   │
+                            ▼                   │
+                     ┌──────────────┐           │
+                     │  Streamlit   │◄──────────┘
+                     │  Dashboard   │ (Direct psycopg2 read)
+                     │(dashboard/app│
+                     └──────────────┘
 ```
 
 ### Component Breakdown
 
-1. **Data Pipeline:** Preprocessing → Feature scaling → Imbalance handling
-2. **ML Model:** Trained models saved as `.pkl` files
-3. **FastAPI Server:** Loads model and provides REST API
-4. **Streamlit Dashboard:** Interactive UI for predictions
+1. **Transaction Data:** Direct dictionary inputs mapped to model feature schemas.
+2. **FastAPI Server:** Conducts inferences on `/predict` and explainability diagnostics on `/predict/explain` via cached SHAP `TreeExplainer`.
+3. **PostgreSQL Database:** Captures transaction amounts, model classifications, probabilities, metrics, and SHAP metadata.
+4. **Streamlit Dashboard:** Provides mock payload triggers, gauge metrics, plotly SHAP visualizations, and direct database queries.
+5. **Apache Superset:** Advanced Business Intelligence server aggregating predictive analytics and operational fraud patterns.
 
 ---
 
@@ -288,10 +274,10 @@ Available notebooks:
 ### Risk Levels
 
 | Probability Range | Risk Level | Action |
-|------------------|------------|--------|
-| 0.0 - 0.3 | LOW | Normal processing |
-| 0.3 - 0.7 | MEDIUM | Additional verification |
-| 0.7 - 1.0 | HIGH | Block and investigate |
+|-------------------|------------|--------|
+| < 0.3             | LOW        | Normal processing |
+| 0.3 - 0.7         | MEDIUM     | Additional verification |
+| > 0.7             | HIGH       | Block and investigate |
 
 ---
 
@@ -337,6 +323,7 @@ scam_shield/
 | Recall | 97.3% |
 | F1-Score | 94.8% |
 | ROC-AUC | 0.988 |
+| Average Response Time | <100 ms |
 
 ### Confusion Matrix (Test Set)
 
@@ -346,6 +333,63 @@ scam_shield/
 | **Actual Fraud** | 3 | 97 |
 
 **Key Insight:** The model successfully catches 97% of fraudulent transactions while maintaining low false positive rate.
+
+> [!NOTE]
+> For a detailed, print-ready breakdown of dataset skewness, SMOTE comparisons, and SHAP explainability log-odds, refer to the comprehensive [Statistical Report](statistical_report.md).
+
+---
+
+## 🤖 MLOps Features
+
+ScamShield implements production-grade machine learning operations practices to ensure reliability and explainability:
+
+- **Data Drift Detection:** Automatically compares incoming transaction signatures against the reference dataset (the first 10,000 rows of `creditcard.csv`) using `Evidently AI` `DataDriftPreset` and `DataQualityPreset` reports.
+- **Automated Model Retraining:** Triggerable script `monitoring/retrain.py` that handles complete model updates (rescaling, SMOTE, fitting, metrics export, and versioned file archiving).
+- **Explainable AI (SHAP):** `POST /predict/explain` exposes feature importance breakdowns in real time utilizing cached `shap.TreeExplainer` on the Random Forest tree weights.
+- **Observability Endpoints:**
+  - `GET /health` returns uptime, model version, and database ping connection checks.
+  - `GET /metrics` returns total runs, fraud detection rates, and average latencies.
+
+---
+
+## 📊 Dashboard & Business Intelligence
+
+Operational metrics and audit queries are split across two dedicated interfaces:
+
+### Streamlit Dashboard (`localhost:8501`)
+Provides user forms to test inferences and explainability (Plotly SHAP charts) alongside direct database analytics readouts.
+
+### Apache Superset (`localhost:8088`)
+Enterprise Business Intelligence portal. Access using default credentials:
+- **Username:** `admin`
+- **Password:** `admin`
+
+It displays the **ScamShield Fraud Intelligence** dashboard with:
+- **Hourly Fraud Rate (Last 7 Days):** Trend analysis line chart.
+- **Risk Level Distribution:** Pie chart representation.
+- **Total Fraud Detected Today:** Operational big number.
+- **Amount Bucket vs Average Fraud Probability:** Segmented bar chart.
+
+---
+
+## 🚀 One-Command Deployment
+
+Build and orchestrate the entire ScamShield machine learning, dashboard, pgAdmin, and Apache Superset stack with a single command:
+
+```bash
+docker-compose up --build
+```
+
+Once all containers are running, navigate to:
+- **FastAPI API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Streamlit Dashboard:** [http://localhost:8501](http://localhost:8501)
+- **Apache Superset:** [http://localhost:8088](http://localhost:8088)
+- **pgAdmin:** [http://localhost:5050](http://localhost:5050)
+
+To configure the Superset database, charts, and dashboards automatically, run:
+```bash
+python superset/setup_dashboards.py
+```
 
 ---
 

@@ -9,3 +9,8 @@ streamlit
 joblib
 matplotlib
 seaborn
+asyncpg
+python-dotenv
+psycopg2-binary
+evidently
+shap
